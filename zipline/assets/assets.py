@@ -797,29 +797,33 @@ class AssetFinder(object):
             ).execute().fetchall()
         ))
 
-    def lookup_expired_futures(self, start, end):
-        if not isinstance(start, pd.Timestamp):
-            start = pd.Timestamp(start)
-        start = start.value
-        if not isinstance(end, pd.Timestamp):
-            end = pd.Timestamp(end)
-        end = end.value
-
+    def get_active_contracts(self, root_symbol,
+                             active_on_date,
+                             min_auto_close):
         fc_cols = self.futures_contracts.c
 
-        nd = sa.func.nullif(fc_cols.notice_date, pd.tslib.iNaT)
-        ed = sa.func.nullif(fc_cols.expiration_date, pd.tslib.iNaT)
-        date = sa.func.coalesce(sa.func.min(nd, ed), ed, nd)
-
-        sids = list(map(
+        return list(map(
             itemgetter('sid'),
             sa.select((fc_cols.sid,)).where(
-                (date >= start) & (date < end)).order_by(
-                sa.func.coalesce(ed, nd).asc()
-            ).execute().fetchall()
-        ))
+                (fc_cols.root_symbol == root_symbol) &
+                (fc_cols.start_date != pd.NaT.value) &
+                (fc_cols.auto_close_date >= min_auto_close.value) &
+                (fc_cols.start_date <= active_on_date.value))
+            .order_by(fc_cols.auto_close_date).execute().fetchall()))
 
-        return sids
+    def get_active_chain(self,
+                         root_symbol,
+                         starting_contract_sid,
+                         active_on_date):
+        fc_cols = self.futures_contracts.c
+
+        return list(map(
+            itemgetter('sid'),
+            sa.select((fc_cols.sid,)).where(
+                (fc_cols.root_symbol == root_symbol) &
+                (fc_cols.sid >= starting_contract_sid) &
+                (fc_cols.start_date <= active_on_date.value))
+            .order_by(fc_cols.auto_close_date).execute().fetchall()))
 
     def _make_sids(tblattr):
         def _(self):

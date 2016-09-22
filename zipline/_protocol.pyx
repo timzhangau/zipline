@@ -732,8 +732,8 @@ cdef class BarData:
         return self.data_portal.get_fetcher_assets(self.simulation_dt_func())
 
     def current_chain(self, continous_future):
-        self.data_portal.get_current_future_chain(
-            continous_future, self.simulation_dt)
+        return self.data_portal.get_current_future_chain(
+            continous_future, self.simulation_dt_func())
 
     property _handle_non_market_minutes:
         def __set__(self, val):

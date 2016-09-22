@@ -23,6 +23,7 @@ from six import iteritems
 from six.moves import reduce
 
 from zipline.assets import Asset, Future, Equity
+from zipline.assets.roll_finder import CalendarRollFinder
 from zipline.data.dispatch_bar_reader import (
     AssetDispatchMinuteBarReader,
     AssetDispatchSessionBarReader
@@ -213,6 +214,9 @@ class DataPortal(object):
             self.trading_calendar.all_sessions.get_loc(self._first_trading_day)
             if self._first_trading_day is not None else None
         )
+
+        self._roll_finder = CalendarRollFinder(self.trading_calendar,
+                                               self.asset_finder)
 
     def _ensure_reader_aligned(self, reader):
         if reader is None:
@@ -1211,3 +1215,15 @@ class DataPortal(object):
                 ret = np.nan
 
             return ret
+
+    def get_current_future_chain(self, continuous_future, dt):
+        session = self.trading_calendar.minute_to_session_label(dt)
+        primary, _ = self._roll_finder.get_rolls(
+            continuous_future.symbol, continuous_future.offset,
+            session, session, 1)[0]
+        import nose; nose.tools.set_trace()
+        result = [self.asset_finder.retrieve_asset(sid)
+                  for sid in self.asset_finder.get_active_chain(
+                          continuous_future.symbol, primary.sid, session)]
+        return result
+
