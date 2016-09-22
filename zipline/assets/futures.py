@@ -16,3 +16,11 @@
 # http://www.cmegroup.com/product-codes-listing/month-codes.html
 CME_CODE_TO_MONTH = dict(zip('FGHJKMNQUVXZ', range(1, 13)))
 MONTH_TO_CME_CODE = dict(zip(range(1, 13), 'FGHJKMNQUVXZ'))
+
+
+class ContinuousFuture(object):
+
+    def __init__(self, symbol, offset=0, roll='calendar'):
+        self.symbol = symbol
+        self.offset = offset
+        self.roll = roll
