@@ -1218,12 +1218,11 @@ class DataPortal(object):
 
     def get_current_future_chain(self, continuous_future, dt):
         session = self.trading_calendar.minute_to_session_label(dt)
-        primary, _ = self._roll_finder.get_rolls(
-            continuous_future.symbol, continuous_future.offset,
-            session, session, 1)[0]
-        import nose; nose.tools.set_trace()
+        contract_center = self._roll_finder.get_contract_center(
+            continuous_future.symbol, session, continuous_future.offset)
+        oc = self._roll_finder._get_ordered_contracts(
+            continuous_future.symbol)
+        chain = oc.active_chain(contract_center, session.value)
         result = [self.asset_finder.retrieve_asset(sid)
-                  for sid in self.asset_finder.get_active_chain(
-                          continuous_future.symbol, primary.sid, session)]
+                  for sid in chain]
         return result
-

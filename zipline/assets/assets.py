@@ -740,90 +740,15 @@ class AssetFinder(object):
             raise SymbolNotFound(symbol=symbol)
         return self.retrieve_asset(data['sid'])
 
-    @weak_lru_cache(100)
-    def _get_future_sids_for_root_symbol(self, root_symbol, as_of_date_ns):
+    def get_contract_info(self, root_symbol):
         fc_cols = self.futures_contracts.c
 
-        return list(map(
-            itemgetter('sid'),
-            sa.select((fc_cols.sid,)).where(
+        fields = (fc_cols.sid, fc_cols.start_date, fc_cols.auto_close_date)
+
+        return list(sa.select(fields).where(
                 (fc_cols.root_symbol == root_symbol) &
-
-                # Filter to contracts that are still valid. If both
-                # exist, use the one that comes first in time (i.e.
-                # the lower value). If either notice_date or
-                # expiration_date is NaT, use the other. If both are
-                # NaT, the contract cannot be included in any chain.
-                sa.case(
-                    [
-                        (
-                            fc_cols.notice_date == pd.NaT.value,
-                            fc_cols.expiration_date >= as_of_date_ns
-                        ),
-                        (
-                            fc_cols.expiration_date == pd.NaT.value,
-                            fc_cols.notice_date >= as_of_date_ns
-                        )
-                    ],
-                    else_=(
-                        sa.func.min(
-                            fc_cols.notice_date,
-                            fc_cols.expiration_date
-                        ) >= as_of_date_ns
-                    )
-                )
-            ).order_by(
-                # If both dates exist sort using minimum of
-                # expiration_date and notice_date
-                # else if one is NaT use the other.
-                sa.case(
-                    [
-                        (
-                            fc_cols.expiration_date == pd.NaT.value,
-                            fc_cols.notice_date
-                        ),
-                        (
-                            fc_cols.notice_date == pd.NaT.value,
-                            fc_cols.expiration_date
-                        )
-                    ],
-                    else_=(
-                        sa.func.min(
-                            fc_cols.notice_date,
-                            fc_cols.expiration_date
-                        )
-                    )
-                ).asc()
-            ).execute().fetchall()
-        ))
-
-    def get_active_contracts(self, root_symbol,
-                             active_on_date,
-                             min_auto_close):
-        fc_cols = self.futures_contracts.c
-
-        return list(map(
-            itemgetter('sid'),
-            sa.select((fc_cols.sid,)).where(
-                (fc_cols.root_symbol == root_symbol) &
-                (fc_cols.start_date != pd.NaT.value) &
-                (fc_cols.auto_close_date >= min_auto_close.value) &
-                (fc_cols.start_date <= active_on_date.value))
-            .order_by(fc_cols.auto_close_date).execute().fetchall()))
-
-    def get_active_chain(self,
-                         root_symbol,
-                         starting_contract_sid,
-                         active_on_date):
-        fc_cols = self.futures_contracts.c
-
-        return list(map(
-            itemgetter('sid'),
-            sa.select((fc_cols.sid,)).where(
-                (fc_cols.root_symbol == root_symbol) &
-                (fc_cols.sid >= starting_contract_sid) &
-                (fc_cols.start_date <= active_on_date.value))
-            .order_by(fc_cols.auto_close_date).execute().fetchall()))
+                (fc_cols.start_date != pd.NaT.value))
+            .order_by(fc_cols.auto_close_date).execute().fetchall())
 
     def _make_sids(tblattr):
         def _(self):
@@ -1083,51 +1008,3 @@ for _type in string_types:
 
 class NotAssetConvertible(ValueError):
     pass
-
-
-def was_active(reference_date_value, asset):
-    """
-    Whether or not `asset` was active at the time corresponding to
-    `reference_date_value`.
-
-    Parameters
-    ----------
-    reference_date_value : int
-        Date, represented as nanoseconds since EPOCH, for which we want to know
-        if `asset` was alive.  This is generally the result of accessing the
-        `value` attribute of a pandas Timestamp.
-    asset : Asset
-        The asset object to check.
-
-    Returns
-    -------
-    was_active : bool
-        Whether or not the `asset` existed at the specified time.
-    """
-    return (
-        asset.start_date.value
-        <= reference_date_value
-        <= asset.end_date.value
-    )
-
-
-def only_active_assets(reference_date_value, assets):
-    """
-    Filter an iterable of Asset objects down to just assets that were alive at
-    the time corresponding to `reference_date_value`.
-
-    Parameters
-    ----------
-    reference_date_value : int
-        Date, represented as nanoseconds since EPOCH, for which we want to know
-        if `asset` was alive.  This is generally the result of accessing the
-        `value` attribute of a pandas Timestamp.
-    assets : iterable[Asset]
-        The assets to filter.
-
-    Returns
-    -------
-    active_assets : list
-        List of the active assets from `assets` on the requested date.
-    """
-    return [a for a in assets if was_active(reference_date_value, a)]
