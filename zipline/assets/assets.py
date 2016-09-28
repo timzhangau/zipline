@@ -753,11 +753,10 @@ class AssetFinder(object):
                 (fc_cols.start_date != pd.NaT.value))
             .order_by(fc_cols.auto_close_date).execute().fetchall())
 
-    def _get_ordered_contracts(self, root_symbol):
+    def get_ordered_contracts(self, root_symbol):
         try:
             return self._ordered_contracts[root_symbol]
         except KeyError:
-            oc = self._get_ordered_contracts
             contract_info = self._get_contract_info(root_symbol)
             size = len(contract_info)
             sids = np.full(size, 0, dtype=np.int64)
@@ -777,7 +776,7 @@ class AssetFinder(object):
             return oc
 
     def create_continuous_future(self, root_symbol, offset, roll_style):
-        oc = self._get_ordered_contracts(root_symbol)
+        oc = self.get_ordered_contracts(root_symbol)
         start_date = self.retrieve_asset(oc.contract_sids[0]).start_date
         end_date = self.retrieve_asset(oc.contract_sids[-1]).end_date
         return ContinuousFuture(root_symbol, offset, roll_style,

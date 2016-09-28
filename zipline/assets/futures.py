@@ -26,20 +26,21 @@ class OrderedContracts(object):
                  start_dates,
                  auto_close_dates):
         self.root_symbol = root_symbol
+        self._size = len(contract_sids)
         self.contract_sids = contract_sids
         self.start_dates = start_dates
         self.auto_close_dates = auto_close_dates
 
     def contract_before_auto_close(self, dt_value):
         # TODO Cythonize
-        for i, auto_close_date in enumerate(self._auto_close_dates):
+        for i, auto_close_date in enumerate(self.auto_close_dates):
             if auto_close_date > dt_value:
                 break
-        return self._sids[i]
+        return self.contract_sids[i]
 
     def contract_at_offset(self, sid, offset):
         # TODO Cythonize
-        sids = self._sids
+        sids = self.contract_sids
         for i in range(self._size):
             if sid == sids[i]:
                 return sids[i + offset]
@@ -47,8 +48,8 @@ class OrderedContracts(object):
     def active_chain(self, starting_sid, dt_value):
         # TODO Cythonize
         left = right = 0
-        sids = self._sids
-        start_dates = self._start_dates
+        sids = self.contract_sids
+        start_dates = self.start_dates
 
         for i in range(self._size):
             if starting_sid == sids[i]:
@@ -66,9 +67,13 @@ class OrderedContracts(object):
 
 class ContinuousFuture(object):
 
-    def __init__(self, symbol, offset, roll, start_date, end_date):
-        self.symbol = symbol
+    def __init__(self, root_symbol, offset, roll, start_date, end_date):
+        self.root_symbol = root_symbol
         self.offset = offset
         self.roll = roll
         self.start_date = start_date
         self.end_date = end_date
+
+    def __repr__(self):
+        return "ContinuousFuture({0}, {1}, {2})".format(
+            self.root_symbol, self.offset, self.roll)
