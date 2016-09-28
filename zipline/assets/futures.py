@@ -12,6 +12,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import array
+import binascii
+import struct
 
 # http://www.cmegroup.com/product-codes-listing/month-codes.html
 CME_CODE_TO_MONTH = dict(zip('FGHJKMNQUVXZ', range(1, 13)))
@@ -73,6 +76,17 @@ class ContinuousFuture(object):
         self.roll = roll
         self.start_date = start_date
         self.end_date = end_date
+        s = struct.Struct("2s h 4s")
+        a = array.array('c', '\0' * s.size)
+        values = (self.root_symbol, self.offset, self.roll[:4])
+        s.pack_into(a, 0, *values)
+        self.sid = int(binascii.hexlify(a), 16)
+
+    def __int__(self):
+        return self.sid
+
+    def __hash__(self):
+        return self.sid
 
     def __repr__(self):
         return "ContinuousFuture('{0}', {1}, '{2}')".format(

@@ -779,8 +779,11 @@ class AssetFinder(object):
         oc = self.get_ordered_contracts(root_symbol)
         start_date = self.retrieve_asset(oc.contract_sids[0]).start_date
         end_date = self.retrieve_asset(oc.contract_sids[-1]).end_date
-        return ContinuousFuture(root_symbol, offset, roll_style,
-                                start_date, end_date)
+        cf = ContinuousFuture(root_symbol, offset, roll_style,
+                              start_date, end_date)
+        # TODO: Do we really want to do this?
+        self._asset_cache[cf] = cf
+        return cf
 
     def _make_sids(tblattr):
         def _(self):

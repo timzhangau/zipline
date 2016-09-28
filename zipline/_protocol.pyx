@@ -25,6 +25,7 @@ from cpython cimport bool
 from collections import Iterable
 
 from zipline.assets import Asset, Future
+from zipline.assets.futures import ContinuousFuture
 from zipline.zipline_warnings import ZiplineDeprecationWarning
 
 
@@ -580,7 +581,8 @@ cdef class BarData:
 
     @check_parameters(('assets', 'fields', 'bar_count',
                        'frequency'),
-                      ((Asset,) + string_types, string_types, int,
+                      ((Asset, ContinuousFuture) + string_types, string_types,
+                       int,
                        string_types))
     def history(self, assets, fields, bar_count, frequency):
         """
