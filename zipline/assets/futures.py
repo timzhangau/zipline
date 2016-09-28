@@ -75,5 +75,5 @@ class ContinuousFuture(object):
         self.end_date = end_date
 
     def __repr__(self):
-        return "ContinuousFuture({0}, {1}, {2})".format(
+        return "ContinuousFuture('{0}', {1}, '{2}')".format(
             self.root_symbol, self.offset, self.roll)
