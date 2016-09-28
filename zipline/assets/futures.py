@@ -18,9 +18,57 @@ CME_CODE_TO_MONTH = dict(zip('FGHJKMNQUVXZ', range(1, 13)))
 MONTH_TO_CME_CODE = dict(zip(range(1, 13), 'FGHJKMNQUVXZ'))
 
 
+class OrderedContracts(object):
+
+    def __init__(self,
+                 root_symbol,
+                 contract_sids,
+                 start_dates,
+                 auto_close_dates):
+        self.root_symbol = root_symbol
+        self.contract_sids = contract_sids
+        self.start_dates = start_dates
+        self.auto_close_dates = auto_close_dates
+
+    def contract_before_auto_close(self, dt_value):
+        # TODO Cythonize
+        for i, auto_close_date in enumerate(self._auto_close_dates):
+            if auto_close_date > dt_value:
+                break
+        return self._sids[i]
+
+    def contract_at_offset(self, sid, offset):
+        # TODO Cythonize
+        sids = self._sids
+        for i in range(self._size):
+            if sid == sids[i]:
+                return sids[i + offset]
+
+    def active_chain(self, starting_sid, dt_value):
+        # TODO Cythonize
+        left = right = 0
+        sids = self._sids
+        start_dates = self._start_dates
+
+        for i in range(self._size):
+            if starting_sid == sids[i]:
+                left = i
+                break
+
+        for j in range(i, self._size):
+            if start_dates[j] > dt_value:
+                right = j
+                break
+
+        # TODO: Memory view?
+        return sids[left:right+1]
+
+
 class ContinuousFuture(object):
 
-    def __init__(self, symbol, offset=0, roll='calendar'):
+    def __init__(self, symbol, offset, roll, start_date, end_date):
         self.symbol = symbol
         self.offset = offset
         self.roll = roll
+        self.start_date = start_date
+        self.end_date = end_date
