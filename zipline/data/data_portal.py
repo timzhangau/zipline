@@ -25,6 +25,8 @@ from six.moves import reduce
 from zipline.assets import Asset, Future, Equity
 from zipline.assets.futures import ContinuousFuture
 from zipline.assets.roll_finder import CalendarRollFinder
+from zipline.data.continuous_future_reader import \
+    ContinuousFutureSessionBarReader
 from zipline.data.dispatch_bar_reader import (
     AssetDispatchMinuteBarReader,
     AssetDispatchSessionBarReader
@@ -174,6 +176,17 @@ class DataPortal(object):
         if aligned_future_session_reader is not None:
             aligned_session_readers[Future] = aligned_future_session_reader
 
+        self._roll_finders = {
+            'calendar': CalendarRollFinder(self.trading_calendar,
+                                           self.asset_finder)
+        }
+
+        aligned_session_readers[ContinuousFuture] = \
+            ContinuousFutureSessionBarReader(
+                aligned_future_session_reader,
+                self._roll_finders,
+            )
+
         _dispatch_minute_reader = AssetDispatchMinuteBarReader(
             self.trading_calendar,
             self.asset_finder,
@@ -222,11 +235,6 @@ class DataPortal(object):
             self.trading_calendar.all_sessions.get_loc(self._first_trading_day)
             if self._first_trading_day is not None else None
         )
-
-        self._roll_finders = {
-            'calendar': CalendarRollFinder(self.trading_calendar,
-                                           self.asset_finder)
-        }
 
     def _ensure_reader_aligned(self, reader):
         if reader is None:

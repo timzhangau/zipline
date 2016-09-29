@@ -3,8 +3,9 @@ from zipline.data.session_bars import SessionBarReader
 
 class ContinuousFutureSessionBarReader(SessionBarReader):
 
-    def __init__(self, bar_reader):
+    def __init__(self, bar_reader, roll_finders):
         self._bar_reader = bar_reader
+        self._roll_finders = roll_finders
 
     def load_raw_arrays(self, columns, start_date, end_date, assets):
         """
@@ -28,6 +29,7 @@ class ContinuousFutureSessionBarReader(SessionBarReader):
         """
         pass
 
+    @property
     def last_available_dt(self):
         """
         Returns
@@ -37,6 +39,7 @@ class ContinuousFutureSessionBarReader(SessionBarReader):
         """
         return self._bar_reader.last_available_dt
 
+    @property
     def trading_calendar(self):
         """
         Returns the zipline.utils.calendar.trading_calendar used to read
@@ -44,6 +47,7 @@ class ContinuousFutureSessionBarReader(SessionBarReader):
         """
         return self._bar_reader.trading_calendar
 
+    @property
     def first_trading_day(self):
         """
         Returns
@@ -85,7 +89,6 @@ class ContinuousFutureSessionBarReader(SessionBarReader):
                                       continuous_future.offset))
         return self._bar_reader.get_value(sid, dt, field)
 
-    @abstractmethod
     def get_last_traded_dt(self, asset, dt):
         """
         Get the latest minute on or before ``dt`` in which ``asset`` traded.
@@ -107,7 +110,7 @@ class ContinuousFutureSessionBarReader(SessionBarReader):
         """
         pass
 
-    @abstractproperty
+    @property
     def sessions(self):
         """
         Returns
