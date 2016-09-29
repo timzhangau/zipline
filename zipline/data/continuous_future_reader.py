@@ -1,3 +1,4 @@
+import numpy as np
 from zipline.data.session_bars import SessionBarReader
 
 
@@ -27,7 +28,27 @@ class ContinuousFutureSessionBarReader(SessionBarReader):
             (minutes in range, sids) with a dtype of float64, containing the
             values for the respective field over start and end dt range.
         """
-        pass
+        rolls = {}
+        for asset in assets:
+            rf = self._roll_finders[asset.roll]
+            rolls[asset] = rf.get_rolls(
+                asset, start_date, end_date)
+        num_sessions = len(
+            self.trading_calendar.sessions_in_range(start_date, end_date))
+        shape = num_sessions, len(assets)
+
+        results = []
+
+        for column in columns:
+            if column != 'volume':
+                out = np.full(shape, np.nan)
+            else:
+                out = np.zeros(shape, dtype=np.uint32)
+            for i, asset in enumerate(assets):
+                # TODO Rolls here.
+                out[i] = self._bar_reader.load_raw_arrays(
+                    [column], start_date, end_date)
+        return results
 
     @property
     def last_available_dt(self):
