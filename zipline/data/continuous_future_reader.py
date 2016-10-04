@@ -28,16 +28,19 @@ class ContinuousFutureSessionBarReader(SessionBarReader):
             (minutes in range, sids) with a dtype of float64, containing the
             values for the respective field over start and end dt range.
         """
-        rolls = {}
+        rolls_by_asset = {}
         for asset in assets:
             rf = self._roll_finders[asset.roll]
-            rolls[asset] = rf.get_rolls(
-                asset, start_date, end_date)
+            rolls_by_asset[asset] = rf.get_rolls(
+                asset.root_symbol, start_date, end_date, asset.offset)
         num_sessions = len(
             self.trading_calendar.sessions_in_range(start_date, end_date))
         shape = num_sessions, len(assets)
 
         results = []
+
+        sessions = self._bar_reader.trading_calendar.sessions_in_range(
+            start_date, end_date)
 
         for column in columns:
             if column != 'volume':
@@ -45,9 +48,14 @@ class ContinuousFutureSessionBarReader(SessionBarReader):
             else:
                 out = np.zeros(shape, dtype=np.uint32)
             for i, asset in enumerate(assets):
-                # TODO Rolls here.
-                out[i] = self._bar_reader.load_raw_arrays(
-                    [column], start_date, end_date)
+                rolls = rolls_by_asset[asset]
+                start = start_date
+                for roll in rolls:
+                    sid, end = roll
+                    out_start = sessions.get_loc(start)
+                    out_end = sessions.get_loc(end)
+                    out[i, out_start:out_end + 1] = self._bar_reader.\
+                        load_raw_arrays([column], start, end, [sid])
         return results
 
     @property
