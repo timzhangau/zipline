@@ -172,7 +172,8 @@ class EarningsEstimatesLoader(PipelineLoader):
                                       next_qtr_start_idx,
                                       requested_quarter,
                                       sid,
-                                      sid_idx):
+                                      sid_idx,
+                                      col_to_split_adjustments):
         raise NotImplementedError('create_overwrite_for_estimate')
 
     @abstractproperty
@@ -283,12 +284,15 @@ class EarningsEstimatesLoader(PipelineLoader):
         ).nth(-1)
 
         sid_to_idx = dict(zip(assets, range(len(assets))))
-        col_to_overwrites = defaultdict(dict)
+        col_to_all_adjustments = defaultdict(dict)
         col_to_split_adjustments = {}
         if self._split_adjustments:
             self.collect_split_adjustments(assets,
                                            dates,
                                            col_to_split_adjustments)
+        for column in columns:
+            column_name = self.name_map[column.name]
+            col_to_all_adjustments[column_name] = defaultdict(list)
 
         def collect_overwrites(group):
             next_qtr_start_indices = dates.searchsorted(
@@ -306,7 +310,7 @@ class EarningsEstimatesLoader(PipelineLoader):
                     # never start at index 0; a starting index of 0 means that
                     # the next quarter's event date was NaT.
                     self.create_overwrite_for_quarter(
-                        col_to_overwrites,
+                        col_to_all_adjustments,
                         col_to_split_adjustments,
                         idx,
                         last_per_qtr,
@@ -319,9 +323,14 @@ class EarningsEstimatesLoader(PipelineLoader):
 
         quarter_shifts.groupby(level=SID_FIELD_NAME).apply(collect_overwrites)
 
-        return self.merge_adjustments(col_to_overwrites,
-                                      col_to_split_adjustments,
-                                      columns)
+        # Apply the remaining split adjustments.
+        for column_name in self._split_adjusted_column_names:
+            for sid in col_to_split_adjustments[column_name]:
+                for ts in col_to_split_adjustments[column_name][sid]:
+                    col_to_all_adjustments[column_name][ts].extend(
+                        col_to_split_adjustments[column_name][sid][ts]
+                    )
+        return col_to_all_adjustments
 
     def collect_split_adjustments(self,
                                   assets,
@@ -330,7 +339,7 @@ class EarningsEstimatesLoader(PipelineLoader):
         for column_name in self._split_adjusted_column_names:
             col_to_split_adjustments[column_name] = defaultdict(dict)
             for sid in assets:
-                col_to_split_adjustments[sid] = defaultdict(dict)
+                col_to_split_adjustments[column_name][sid] = defaultdict(list)
                 split_adjustments_for_sid =\
                     self._split_adjustments.get_adjustments_for_sid('splits',
                                                                     sid)
@@ -402,7 +411,7 @@ class EarningsEstimatesLoader(PipelineLoader):
             # overwrite all values going up to the starting index of
             # that quarter with estimates for that quarter.
             if requested_quarter in quarters_with_estimates_for_sid:
-                col_to_overwrites[column_name][next_qtr_start_idx] = \
+                col_to_overwrites[column_name][next_qtr_start_idx].extend(
                     self.create_overwrite_for_estimate(
                         col,
                         column_name,
@@ -412,19 +421,19 @@ class EarningsEstimatesLoader(PipelineLoader):
                         sid,
                         sid_idx,
                         col_to_split_adjustments
-                    ),
+                    ))
             # There are no estimates for the quarter. Overwrite all
             # values going up to the starting index of that quarter
             # with the missing value for this column.
             else:
-                col_to_overwrites[column_name][next_qtr_start_idx] = [
+                col_to_overwrites[column_name][next_qtr_start_idx].extend([
                     self.overwrite_with_null(
                         col,
                         last_per_qtr.index,
                         next_qtr_start_idx,
                         sid_idx
                     ),
-                ]
+                ])
 
     def overwrite_with_null(self,
                             column,
@@ -584,51 +593,6 @@ class EarningsEstimatesLoader(PipelineLoader):
 class NextEarningsEstimatesLoader(EarningsEstimatesLoader):
     searchsorted_side = 'right'
 
-    def merge_adjustments(self,
-                          col_to_overwrites,
-                          col_to_split_adjustments,
-                          columns):
-        # For each overwrite ts, add in all adjustments that are <= that ts.
-        # Then, merge in all adjustments that don't collide with any ts.
-        result = defaultdict(dict)
-        for col in columns:
-            column_name = self.name_map[col.name]
-            if column_name in self._split_adjusted_column_names:
-                # For each day that has overwrites, determine which sids'
-                # data is being overwritten. Then, find all adjustments for
-                # those sids that came on or before the day of the overwrite
-                # and add all those adjustments in to the list after the
-                # overwrite. We need to do this because for 'next' we overwrite
-                # ALL values when a new quarter begins, so we need to apply all
-                # splits that happened up to that date.
-                for ts in col_to_overwrites[column_name]:
-                    overwritten_sids = [overwrite.first_col
-                                        for overwrite
-                                        in col_to_overwrites[column_name][ts]]
-                    eligible_adjustments = [
-                        adjustment[1]
-                        for adjustment in col_to_split_adjustments[
-                            column_name
-                        ].items()
-                        if adjustment[0] <= ts and
-                        adjustment[1].first_col in overwritten_sids
-                    ]
-                    result[
-                        column_name
-                    ][ts] = col_to_overwrites[column_name][ts] + \
-                        list(chain.from_iterable(eligible_adjustments))
-                # Find all adjustments that don't overlap with overwrites and
-                # add those in by themselves.
-                for ts in col_to_split_adjustments[column_name]:
-                    if ts not in result[column_name]:
-                        result[column_name][ts] = col_to_split_adjustments[
-                            column_name
-                        ][ts]
-            # Add in non-split-adjusted columns.
-            else:
-                result[column_name] = col_to_overwrites[column_name]
-        return result
-
     def create_overwrite_for_estimate(self,
                                       column,
                                       column_name,
@@ -636,8 +600,9 @@ class NextEarningsEstimatesLoader(EarningsEstimatesLoader):
                                       next_qtr_start_idx,
                                       requested_quarter,
                                       sid,
-                                      sid_idx):
-        return self.array_overwrites_dict[column.dtype](
+                                      sid_idx,
+                                      col_to_split_adjustments):
+        adjustments = [self.array_overwrites_dict[column.dtype](
             0,
             # overwrite thru last qtr
             next_qtr_start_idx - 1,
@@ -648,7 +613,25 @@ class NextEarningsEstimatesLoader(EarningsEstimatesLoader):
                 requested_quarter,
                 sid,
             ].values[:next_qtr_start_idx],
-        )
+        )]
+        if self._split_adjustments and column_name \
+                in self._split_adjusted_column_names:
+            for ts in col_to_split_adjustments[column_name][sid]:
+                if ts < next_qtr_start_idx:
+                    adjustments.extend(
+                        col_to_split_adjustments[column_name][sid][ts]
+                    )
+            if next_qtr_start_idx in col_to_split_adjustments[
+                column_name
+            ][sid]:
+                # We don't want to add this same adjustment multiple
+                # times, so remove it. For adjustments that are <
+                # timestamp, we will want to apply them on their
+                # timestamp as well, so we need to keep those.
+                adjustments.extend(
+                    col_to_split_adjustments[column_name][sid].pop(ts)
+                )
+        return adjustments
 
     def get_shifted_qtrs(self, zero_qtrs, num_announcements):
         return zero_qtrs + (num_announcements - 1)
@@ -687,54 +670,6 @@ class NextEarningsEstimatesLoader(EarningsEstimatesLoader):
 class PreviousEarningsEstimatesLoader(EarningsEstimatesLoader):
     searchsorted_side = 'left'
 
-    def merge_adjustments(self,
-                          col_to_overwrites,
-                          col_to_split_adjustments,
-                          columns):
-        # For previous, we overwrite all values before a quarter
-        # started with NaN, and we don't overwrite the actual value
-        # associated with the quarter. So, we can apply split
-        # adjustments as they come in and do not need to re-apply
-        # them when we overwrite.
-        result = {}
-        for col in columns:
-            column_name = self.name_map[col.name]
-            result[column_name] = defaultdict(list)
-            if column_name in self._split_adjusted_column_names:
-                # If this column might be split-adjusted, determine if any of
-                # the overwritten sids collide with any of the adjusted sids
-                # on any timestamps and append in order of
-                # overwrite-then-adjustment if they do.
-                for sid in col_to_overwrites[column_name]:
-                    for ts in col_to_overwrites[column_name][sid]:
-                        if ts in col_to_split_adjustments[column_name][sid]:
-                            result[
-                                column_name
-                            ][ts].append(
-                                col_to_overwrites[column_name][ts] +
-                                col_to_split_adjustments[column_name][ts]
-                            )
-                        # This ts has no conflicts for the given sid,
-                        # so simply add the overwrite.
-                        else:
-                            result[column_name][ts].append(col_to_overwrites[
-                                column_name][sid][ts])
-
-                    # Find all adjustments that don't overlap with overwrites
-                    # and add those in by themselves.
-                    for ts in col_to_split_adjustments[column_name][sid]:
-                        if ts not in col_to_overwrites[column_name][sid]:
-                            result[column_name][ts].append(
-                                col_to_split_adjustments[column_name][ts]
-                            )
-            # This is not a split-adjusted column, so simply add the
-            # overwrites.
-            else:
-                result[column_name][ts].append(col_to_overwrites[
-                                column_name][sid][ts])
-
-        return result
-
     def create_overwrite_for_estimate(self,
                                       column,
                                       column_name,
@@ -750,13 +685,16 @@ class PreviousEarningsEstimatesLoader(EarningsEstimatesLoader):
             next_qtr_start_idx,
             sid_idx,
         )]
-        if self._split_adjustments:
-            for ts in col_to_split_adjustments[column_name][sid]:
-                if ts == next_qtr_start_idx:
-                    adjustments += col_to_split_adjustments[column_name][
-                        sid
-                    ][ts]
-                    col_to_split_adjustments[column_name][sid].remove(ts)
+        if self._split_adjustments and \
+                column_name in self._split_adjusted_column_names:
+            if next_qtr_start_idx in col_to_split_adjustments[
+                column_name
+            ][sid]:
+                adjustments.extend(
+                    col_to_split_adjustments[column_name][sid].pop(
+                        next_qtr_start_idx
+                    )
+                )
         return adjustments
 
     def get_shifted_qtrs(self, zero_qtrs, num_announcements):
