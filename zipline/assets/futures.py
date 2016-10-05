@@ -91,3 +91,7 @@ class ContinuousFuture(object):
     def __repr__(self):
         return "ContinuousFuture('{0}', {1}, '{2}')".format(
             self.root_symbol, self.offset, self.roll)
+
+    def is_alive_for_session(self, session_label):
+        # TODO Asset interface?
+        return True

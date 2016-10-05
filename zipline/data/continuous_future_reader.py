@@ -42,35 +42,39 @@ class ContinuousFutureSessionBarReader(SessionBarReader):
         sessions = self._bar_reader.trading_calendar.sessions_in_range(
             start_date, end_date)
 
+        # Get partitions
+        partitions_by_asset = {}
+        for asset in assets:
+            rolls_by_asset[asset] = rf.get_rolls(
+                asset.root_symbol, start_date, end_date, asset.offset)
+            partitions = []
+            partitions_by_asset[asset] = partitions
+            rolls = rolls_by_asset[asset]
+            start = start_date
+            for roll in rolls:
+                sid, end = roll
+                start_loc = sessions.get_loc(start)
+                if end is not None:
+                    end_loc = sessions.get_loc(end)
+                else:
+                    end = end_date
+                    end_loc = len(sessions) - 1
+                partitions.append((sid, start, end, start_loc, end_loc))
+                if roll[-1] is not None:
+                    start = sessions[end_loc + 1]
+
         for column in columns:
             if column != 'volume':
                 out = np.full(shape, np.nan)
             else:
                 out = np.zeros(shape, dtype=np.uint32)
             for i, asset in enumerate(assets):
-                rolls = rolls_by_asset[asset]
-                start = start_date
-                print asset
-                print rolls
-                for roll in rolls:
-                    sid, end = roll
-                    out_start = sessions.get_loc(start)
-                    print roll
-                    # FIXME
-                    try:
-                        out_end = sessions.get_loc(end)
-                    except KeyError:
-                        end = sessions[-1]
-                        out_end = len(sessions) - 1
-                    # FIXME
-                    if end is None:
-                        end = sessions[-1]
-                        out_end = len(sessions) - 1
+                partitions = partitions_by_asset[asset]
+                for sid, start, end, start_loc, end_loc in partitions:
                     result = self._bar_reader.\
                         load_raw_arrays([column], start, end, [sid])[0]
-                    if roll[-1] is None:
-                        import nose; nose.tools.set_trace()
-                    out[out_start:out_end + 1, i] = result[:, 0]
+                    out[start_loc:end_loc + 1, i] = result[:, 0]
+            results.append(out)
         return results
 
     @property

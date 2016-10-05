@@ -40,6 +40,7 @@ class CalendarRollFinder(object):
         i += offset
         first = oc.contract_sids[i]
         rolls = [(first, None)]
+        i -= 1
         auto_close_date = Timestamp(oc.auto_close_dates[i - offset], tz='UTC')
         while auto_close_date > start:
             # FIXME
