@@ -31,18 +31,23 @@ class CalendarRollFinder(object):
         return oc.contract_at_offset(primary, offset)
 
     def get_rolls(self, root_symbol, start, end, offset):
-        sessions = self.trading_calendar.sessions_in_range(start, end)
+        sessions = self.trading_calendar.all_sessions
         oc = self.asset_finder.get_ordered_contracts(root_symbol)
-        primary_at_end = self.get_contract_center(root_symbol, end, offset)
+        primary_at_end = self.get_contract_center(root_symbol, end, 0)
         for i, sid in enumerate(oc.contract_sids):
             if sid == primary_at_end:
                 break
-        rolls = [(primary_at_end, None)]
-        auto_close_date = Timestamp(oc.auto_close_dates[i], tz='UTC')
+        i += offset
+        first = oc.contract_sids[i]
+        rolls = [(first, None)]
+        auto_close_date = Timestamp(oc.auto_close_dates[i - offset], tz='UTC')
         while auto_close_date > start:
-            i -= 1
-            auto_close_date = Timestamp(oc.auto_close_dates[i], tz='UTC')
+            # FIXME
             rolls.insert(0, (oc.contract_sids[i],
                              sessions[sessions.searchsorted(
                                  auto_close_date, side='left')]))
+            auto_close_date = Timestamp(oc.auto_close_dates[i - offset],
+                                        tz='UTC')
+            i -= 1
+
         return rolls

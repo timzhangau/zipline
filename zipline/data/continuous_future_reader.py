@@ -50,12 +50,27 @@ class ContinuousFutureSessionBarReader(SessionBarReader):
             for i, asset in enumerate(assets):
                 rolls = rolls_by_asset[asset]
                 start = start_date
+                print asset
+                print rolls
                 for roll in rolls:
                     sid, end = roll
                     out_start = sessions.get_loc(start)
-                    out_end = sessions.get_loc(end)
-                    out[i, out_start:out_end + 1] = self._bar_reader.\
-                        load_raw_arrays([column], start, end, [sid])
+                    print roll
+                    # FIXME
+                    try:
+                        out_end = sessions.get_loc(end)
+                    except KeyError:
+                        end = sessions[-1]
+                        out_end = len(sessions) - 1
+                    # FIXME
+                    if end is None:
+                        end = sessions[-1]
+                        out_end = len(sessions) - 1
+                    result = self._bar_reader.\
+                        load_raw_arrays([column], start, end, [sid])[0]
+                    if roll[-1] is None:
+                        import nose; nose.tools.set_trace()
+                    out[out_start:out_end + 1, i] = result[:, 0]
         return results
 
     @property
