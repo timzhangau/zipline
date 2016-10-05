@@ -64,16 +64,19 @@ class ContinuousFutureSessionBarReader(SessionBarReader):
                     start = sessions[end_loc + 1]
 
         for column in columns:
-            if column != 'volume':
+            if column != 'volume' or column != 'sid':
                 out = np.full(shape, np.nan)
             else:
                 out = np.zeros(shape, dtype=np.uint32)
             for i, asset in enumerate(assets):
                 partitions = partitions_by_asset[asset]
                 for sid, start, end, start_loc, end_loc in partitions:
-                    result = self._bar_reader.\
-                        load_raw_arrays([column], start, end, [sid])[0]
-                    out[start_loc:end_loc + 1, i] = result[:, 0]
+                    if column != 'sid':
+                        result = self._bar_reader.load_raw_arrays(
+                            [column], start, end, [sid])[0][:, 0]
+                    else:
+                        result = int(sid)
+                    out[start_loc:end_loc + 1, i] = result
             results.append(out)
         return results
 
@@ -239,9 +242,12 @@ class ContinuousFutureMinuteBarReader(SessionBarReader):
             for i, asset in enumerate(assets):
                 partitions = partitions_by_asset[asset]
                 for sid, start, end, start_loc, end_loc in partitions:
-                    result = self._bar_reader.\
-                        load_raw_arrays([column], start, end, [sid])[0]
-                    out[start_loc:end_loc + 1, i] = result[:, 0]
+                    if column != 'sid':
+                        result = self._bar_reader.load_raw_arrays(
+                            [column], start, end, [sid])[0][:, 0]
+                    else:
+                        result = int(sid)
+                    out[start_loc:end_loc + 1, i] = result
             results.append(out)
         return results
 

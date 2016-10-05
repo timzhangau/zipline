@@ -67,7 +67,8 @@ BASE_FIELDS = frozenset([
     "volume",
     "price",
     "last_traded",
-    "contract"
+    "contract",
+    "sid",
 ])
 
 OHLCV_FIELDS = frozenset([
@@ -727,6 +728,8 @@ class DataPortal(object):
             elif field_to_use == 'volume':
                 minute_value = self._daily_aggregator.volumes(
                     assets, end_dt)
+            elif field_to_use == 'sid':
+                minute_value = map(int, assets)
 
             # append the partial day.
             daily_data[-1] = minute_value
@@ -810,7 +813,7 @@ class DataPortal(object):
         -------
         A dataframe containing the requested data.
         """
-        if field not in OHLCVP_FIELDS:
+        if field not in OHLCVP_FIELDS and field != 'sid':
             raise ValueError("Invalid field: {0}".format(field))
 
         if frequency == "1d":
