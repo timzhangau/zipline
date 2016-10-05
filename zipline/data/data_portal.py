@@ -729,7 +729,9 @@ class DataPortal(object):
                 minute_value = self._daily_aggregator.volumes(
                     assets, end_dt)
             elif field_to_use == 'sid':
-                minute_value = map(int, assets)
+                minute_value = [
+                    int(self._get_current_contract(asset, end_dt))
+                    for asset in assets]
 
             # append the partial day.
             daily_data[-1] = minute_value
