@@ -25,8 +25,10 @@ from six.moves import reduce
 from zipline.assets import Asset, Future, Equity
 from zipline.assets.futures import ContinuousFuture
 from zipline.assets.roll_finder import CalendarRollFinder
-from zipline.data.continuous_future_reader import \
-    ContinuousFutureSessionBarReader
+from zipline.data.continuous_future_reader import (
+    ContinuousFutureSessionBarReader,
+    ContinuousFutureMinuteBarReader
+)
 from zipline.data.dispatch_bar_reader import (
     AssetDispatchMinuteBarReader,
     AssetDispatchSessionBarReader
@@ -184,6 +186,12 @@ class DataPortal(object):
         aligned_session_readers[ContinuousFuture] = \
             ContinuousFutureSessionBarReader(
                 aligned_future_session_reader,
+                self._roll_finders,
+            )
+
+        aligned_minute_readers[ContinuousFuture] = \
+            ContinuousFutureMinuteBarReader(
+                aligned_future_minute_reader,
                 self._roll_finders,
             )
 
