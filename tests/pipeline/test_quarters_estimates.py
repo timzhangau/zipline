@@ -1126,7 +1126,7 @@ class PreviousWithSplitAdjustedWindows(WithSplitAdjustedWindows,
         return PreviousEarningsEstimatesLoader(
             events,
             columns,
-            split_adjustments=cls.adjustment_reader,
+            split_adjustments_loader=cls.adjustment_reader,
             split_adjusted_column_names=['estimate']
         )
 
@@ -1203,7 +1203,7 @@ class NextWithSplitAdjustedWindows(WithSplitAdjustedWindows, ZiplineTestCase):
         return NextEarningsEstimatesLoader(
             events,
             columns,
-            split_adjustments=cls.adjustment_reader,
+            split_adjustments_loader=cls.adjustment_reader,
             split_adjusted_column_names=['estimate'],
         )
 
@@ -1288,7 +1288,7 @@ class PreviousWithBulkSplitAdjustedWindows(WithSplitAdjustedWindows,
         return PreviousEarningsEstimatesLoader(
             events,
             columns,
-            split_adjustments=cls.adjustment_reader,
+            split_adjustments_loader=cls.adjustment_reader,
             split_adjusted_column_names=['estimate'],
             split_adjusted_asof=pd.Timestamp('2015-01-15'),
         )
@@ -1367,7 +1367,7 @@ class NextWithBulkSplitAdjustedWindows(WithSplitAdjustedWindows,
         return NextEarningsEstimatesLoader(
             events,
             columns,
-            split_adjustments=cls.adjustment_reader,
+            split_adjustments_loader=cls.adjustment_reader,
             split_adjusted_column_names=['estimate'],
             split_adjusted_asof=pd.Timestamp('2015-01-15'),
         )
