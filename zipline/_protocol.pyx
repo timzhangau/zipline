@@ -431,6 +431,13 @@ cdef class BarData:
 
                 return pd.DataFrame(data)
 
+    @check_parameters(('continuous_future',),
+                      (ContinuousFuture,))
+    def current_chain(self, continuous_future):
+        return self.data_portal.get_current_future_chain(
+            continuous_future,
+            self.simulation_dt_func())
+
     @check_parameters(('assets',), (Asset,))
     def can_trade(self, assets):
         """
@@ -581,7 +588,8 @@ cdef class BarData:
 
     @check_parameters(('assets', 'fields', 'bar_count',
                        'frequency'),
-                      ((Asset,) + string_types, string_types, int,
+                      ((Asset, ContinuousFuture) + string_types, string_types,
+                       int,
                        string_types))
     def history(self, assets, fields, bar_count, frequency):
         """

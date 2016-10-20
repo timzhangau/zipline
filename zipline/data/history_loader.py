@@ -24,11 +24,123 @@ from pandas.tslib import normalize_date
 
 from six import with_metaclass
 
+from zipline.lib._int64window import AdjustedArrayWindow as Int64Window
 from zipline.lib._float64window import AdjustedArrayWindow as Float64Window
 from zipline.lib.adjustment import Float64Multiply
 from zipline.utils.cache import ExpiringCache
 from zipline.utils.memoize import lazyval
 from zipline.utils.numpy_utils import float64_dtype
+
+
+class HistoryCompatibleUSEquityAdjustmentReader(object):
+
+    def __init__(self, adjustment_reader):
+        self._adjustments_reader = adjustment_reader
+
+    def load_adjustments(self, columns, dts, assets):
+        """
+        Returns
+        -------
+        adjustments : list[dict[int -> Adjustment]]
+            A list, where each element corresponds to the `columns`, of
+            mappings from index to adjustment objects to apply at that index.
+        """
+        out = [None] * len(columns)
+        for i, column in enumerate(columns):
+            adjs = {}
+            for asset in assets:
+                adjs.update(self._get_adjustments_in_range(
+                    asset, dts, column))
+            out[i] = adjs
+        return out
+
+    def _get_adjustments_in_range(self, asset, dts, field):
+        """
+        Get the Float64Multiply objects to pass to an AdjustedArrayWindow.
+
+        For the use of AdjustedArrayWindow in the loader, which looks back
+        from current simulation time back to a window of data the dictionary is
+        structured with:
+        - the key into the dictionary for adjustments is the location of the
+        day from which the window is being viewed.
+        - the start of all multiply objects is always 0 (in each window all
+          adjustments are overlapping)
+        - the end of the multiply object is the location before the calendar
+          location of the adjustment action, making all days before the event
+          adjusted.
+
+        Parameters
+        ----------
+        asset : Asset
+            The assets for which to get adjustments.
+        dts : iterable of datetime64-like
+            The dts for which adjustment data is needed.
+        field : str
+            OHLCV field for which to get the adjustments.
+
+        Returns
+        -------
+        out : dict[loc -> Float64Multiply]
+            The adjustments as a dict of loc -> Float64Multiply
+        """
+        sid = int(asset)
+        start = normalize_date(dts[0])
+        end = normalize_date(dts[-1])
+        adjs = {}
+        if field != 'volume':
+            mergers = self._adjustments_reader.get_adjustments_for_sid(
+                'mergers', sid)
+            for m in mergers:
+                dt = m[0]
+                if start < dt <= end:
+                    end_loc = dts.searchsorted(dt)
+                    adj_loc = end_loc
+                    mult = Float64Multiply(0,
+                                           end_loc - 1,
+                                           0,
+                                           0,
+                                           m[1])
+                    try:
+                        adjs[adj_loc].append(mult)
+                    except KeyError:
+                        adjs[adj_loc] = [mult]
+            divs = self._adjustments_reader.get_adjustments_for_sid(
+                'dividends', sid)
+            for d in divs:
+                dt = d[0]
+                if start < dt <= end:
+                    end_loc = dts.searchsorted(dt)
+                    adj_loc = end_loc
+                    mult = Float64Multiply(0,
+                                           end_loc - 1,
+                                           0,
+                                           0,
+                                           d[1])
+                    try:
+                        adjs[adj_loc].append(mult)
+                    except KeyError:
+                        adjs[adj_loc] = [mult]
+        splits = self._adjustments_reader.get_adjustments_for_sid(
+            'splits', sid)
+        for s in splits:
+            dt = s[0]
+            if start < dt <= end:
+                if field == 'volume':
+                    ratio = 1.0 / s[1]
+                else:
+                    ratio = s[1]
+                end_loc = dts.searchsorted(dt)
+                adj_loc = end_loc
+                mult = Float64Multiply(0,
+                                       end_loc - 1,
+                                       0,
+                                       0,
+                                       ratio)
+                try:
+                    adjs[adj_loc].append(mult)
+                except KeyError:
+                    adjs[adj_loc] = [mult]
+        return adjs
 
 
 class SlidingWindow(object):
@@ -82,13 +194,17 @@ class HistoryLoader(with_metaclass(ABCMeta)):
     adjustment_reader : SQLiteAdjustmentReader
         Reader for adjustment data.
     """
-    FIELDS = ('open', 'high', 'low', 'close', 'volume')
+    FIELDS = ('open', 'high', 'low', 'close', 'volume', 'sid')
 
     def __init__(self, trading_calendar, reader, adjustment_reader,
                  sid_cache_size=1000):
         self.trading_calendar = trading_calendar
         self._reader = reader
-        self._adjustments_reader = adjustment_reader
+        if adjustment_reader is not None:
+            self._adjustments_reader = \
+                HistoryCompatibleUSEquityAdjustmentReader(adjustment_reader)
+        else:
+            self._adjustments_reader = None
         self._window_blocks = {
             field: ExpiringCache(LRU(sid_cache_size))
             for field in self.FIELDS
@@ -105,115 +221,6 @@ class HistoryLoader(with_metaclass(ABCMeta)):
     @abstractmethod
     def _array(self, start, end, assets, field):
         pass
-
-    def _get_adjustments_in_range(self, asset, dts, field,
-                                  is_perspective_after):
-        """
-        Get the Float64Multiply objects to pass to an AdjustedArrayWindow.
-
-        For the use of AdjustedArrayWindow in the loader, which looks back
-        from current simulation time back to a window of data the dictionary is
-        structured with:
-        - the key into the dictionary for adjustments is the location of the
-        day from which the window is being viewed.
-        - the start of all multiply objects is always 0 (in each window all
-          adjustments are overlapping)
-        - the end of the multiply object is the location before the calendar
-          location of the adjustment action, making all days before the event
-          adjusted.
-
-        Parameters
-        ----------
-        asset : Asset
-            The assets for which to get adjustments.
-        days : iterable of datetime64-like
-            The days for which adjustment data is needed.
-        field : str
-            OHLCV field for which to get the adjustments.
-        is_perspective_after : bool
-            see: `PricingHistoryLoader.history`
-            If True, the index at which the Multiply object is registered to
-            be popped is calculated so that it applies to the last slot in the
-            sliding window  when the adjustment occurs immediately after the dt
-            that slot represents.
-
-        Returns
-        -------
-        out : The adjustments as a dict of loc -> Float64Multiply
-        """
-        sid = int(asset)
-        start = normalize_date(dts[0])
-        end = normalize_date(dts[-1])
-        adjs = {}
-        if field != 'volume':
-            mergers = self._adjustments_reader.get_adjustments_for_sid(
-                'mergers', sid)
-            for m in mergers:
-                dt = m[0]
-                if start < dt <= end:
-                    end_loc = dts.searchsorted(dt)
-                    adj_loc = end_loc
-                    if is_perspective_after:
-                        # Set adjustment pop location so that it applies
-                        # to last value if adjustment occurs immediately after
-                        # the last slot.
-                        adj_loc -= 1
-                    mult = Float64Multiply(0,
-                                           end_loc - 1,
-                                           0,
-                                           0,
-                                           m[1])
-                    try:
-                        adjs[adj_loc].append(mult)
-                    except KeyError:
-                        adjs[adj_loc] = [mult]
-            divs = self._adjustments_reader.get_adjustments_for_sid(
-                'dividends', sid)
-            for d in divs:
-                dt = d[0]
-                if start < dt <= end:
-                    end_loc = dts.searchsorted(dt)
-                    adj_loc = end_loc
-                    if is_perspective_after:
-                        # Set adjustment pop location so that it applies
-                        # to last value if adjustment occurs immediately after
-                        # the last slot.
-                        adj_loc -= 1
-                    mult = Float64Multiply(0,
-                                           end_loc - 1,
-                                           0,
-                                           0,
-                                           d[1])
-                    try:
-                        adjs[adj_loc].append(mult)
-                    except KeyError:
-                        adjs[adj_loc] = [mult]
-        splits = self._adjustments_reader.get_adjustments_for_sid(
-            'splits', sid)
-        for s in splits:
-            dt = s[0]
-            if start < dt <= end:
-                if field == 'volume':
-                    ratio = 1.0 / s[1]
-                else:
-                    ratio = s[1]
-                end_loc = dts.searchsorted(dt)
-                adj_loc = end_loc
-                if is_perspective_after:
-                    # Set adjustment pop location so that it applies
-                    # to last value if adjustment occurs immediately after
-                    # the last slot.
-                    adj_loc -= 1
-                mult = Float64Multiply(0,
-                                       end_loc - 1,
-                                       0,
-                                       0,
-                                       ratio)
-                try:
-                    adjs[adj_loc].append(mult)
-                except KeyError:
-                    adjs[adj_loc] = [mult]
-        return adjs
 
     def _ensure_sliding_windows(self, assets, dts, field,
                                 is_perspective_after):
@@ -270,22 +277,29 @@ class HistoryLoader(with_metaclass(ABCMeta)):
             prefetch_dts = cal[start_ix:prefetch_end_ix + 1]
             prefetch_len = len(prefetch_dts)
             array = self._array(prefetch_dts, needed_assets, field)
+
+            if field == 'sid':
+                window_type = Int64Window
+            else:
+                window_type = Float64Window
+
             view_kwargs = {}
             if field == 'volume':
                 array = array.astype(float64_dtype)
 
             for i, asset in enumerate(needed_assets):
                 if self._adjustments_reader:
-                    adjs = self._get_adjustments_in_range(
-                        asset, prefetch_dts, field, is_perspective_after)
+                    adjs = self._adjustments_reader.load_adjustments(
+                        [field], prefetch_dts, [asset])[0]
                 else:
                     adjs = {}
-                window = Float64Window(
+                window = window_type(
                     array[:, i].reshape(prefetch_len, 1),
                     view_kwargs,
                     adjs,
                     offset,
-                    size
+                    size,
+                    int(is_perspective_after)
                 )
                 sliding_window = SlidingWindow(window, size, start_ix, offset)
                 asset_windows[asset] = sliding_window
